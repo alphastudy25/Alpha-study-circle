@@ -203,3 +203,9 @@
 .rich-text-editor p {
   margin: 0.35rem 0;
 }
+
+@keyframes shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}

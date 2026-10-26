@@ -337,15 +337,15 @@ export default function AdminCoursePageClient() {
               Delete {sectionToDelete?.title}?
             </DialogTitle>
             <DialogDescription className="text-sm space-y-2 pt-2">
-              <p>
+              <span className="block">
                 Are you sure you want to delete <strong>{sectionToDelete?.title}</strong>?
-              </p>
-              <p className="text-xs text-muted-foreground">
+              </span>
+              <span className="block text-xs text-muted-foreground">
                 This will permanently delete all video lecture links, activity questions, student attempts, and practice/graded assignments belonging to this week.
-              </p>
-              <p className="text-xs font-medium text-amber-600 dark:text-amber-400">
+              </span>
+              <span className="block text-xs font-medium text-amber-600 dark:text-amber-400">
                 Note: A course must always maintain at least 4 weeks.
-              </p>
+              </span>
             </DialogDescription>
           </DialogHeader>
 
