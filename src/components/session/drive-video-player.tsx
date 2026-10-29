@@ -38,12 +38,18 @@ interface FullscreenElement extends HTMLDivElement {
   msRequestFullscreen?: () => Promise<void>;
 }
 
-// 720x405 provides the optimal 16:9 dimensions where Google Drive's player
-// renders its full desktop control bar (play/pause, 10s rewind/forward, time,
-// bottom scrubber, speed, settings, and native fullscreen button) instead of
-// falling back to the mobile "tiny mode" where the slider jumps to the top.
-const BASE_WIDTH = 720;
-const BASE_HEIGHT = 405;
+/**
+ * Google Drive's video player uses an internal breakpoint to decide which
+ * UI to render. When the iframe's width is below ~1200px it renders a
+ * "compact" mobile layout where the scrubber jumps to the TOP. Above ~1200px
+ * it renders the full desktop player (scrubber at BOTTOM, all controls visible).
+ *
+ * Fix: render the iframe at exactly 1280×720 (a hard desktop width) and then
+ * CSS-scale the whole thing down to the actual container width. The player
+ * always sees a 1280px viewport → full desktop controls everywhere.
+ */
+const IFRAME_W = 1280;
+const IFRAME_H = 720; // 16:9
 
 export const DriveVideoPlayer = forwardRef<
   DriveVideoPlayerRef,
@@ -52,220 +58,178 @@ export const DriveVideoPlayer = forwardRef<
   { previewUrl, title, className = "", onFullscreenChange },
   ref,
 ) {
-  const containerRef = useRef<HTMLDivElement>(null);
+  const outerRef = useRef<HTMLDivElement>(null);   // the size-measured wrapper
+  const containerRef = useRef<HTMLDivElement>(null); // the element we fullscreen
+
   const [containerWidth, setContainerWidth] = useState<number>(0);
   const [isLoading, setIsLoading] = useState(true);
-  const [isFullscreen, setIsFullscreen] = useState(false);
-  const [isFallbackFullscreen, setIsFallbackFullscreen] = useState(false);
+  const [isNativeFS, setIsNativeFS] = useState(false);
+  const [isFallbackFS, setIsFallbackFS] = useState(false);
 
-  const activeFullscreen = isFullscreen || isFallbackFullscreen;
+  const activeFullscreen = isNativeFS || isFallbackFS;
 
-  // Measure container width to scale iframe on mobile
+  /* ─── resize observer ──────────────────────────────────────────────────── */
   useEffect(() => {
-    if (!containerRef.current) return;
+    const el = outerRef.current;
+    if (!el) return;
 
-    const el = containerRef.current;
-    const updateSize = () => {
-      if (!el) return;
-      const rect = el.getBoundingClientRect();
-      if (rect.width > 0) {
-        setContainerWidth(rect.width);
-      }
+    const measure = () => {
+      const w = el.getBoundingClientRect().width;
+      if (w > 0) setContainerWidth(w);
     };
 
-    updateSize();
-
-    const observer = new ResizeObserver(() => {
-      updateSize();
-    });
-
-    observer.observe(el);
-
-    return () => {
-      observer.disconnect();
-    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
   }, []);
 
-  // Listen for native browser fullscreen changes
+  /* ─── native fullscreen events ─────────────────────────────────────────── */
   useEffect(() => {
-    const handleFullscreenChange = () => {
+    const onChange = () => {
       const doc = document as FullscreenDocument;
-      const activeElement =
+      const active =
         doc.fullscreenElement ||
         doc.webkitFullscreenElement ||
         doc.mozFullScreenElement ||
         doc.msFullscreenElement;
-
-      const fsActive = !!activeElement && activeElement === containerRef.current;
-      setIsFullscreen(fsActive);
-      onFullscreenChange?.(fsActive);
+      const on = !!active && active === containerRef.current;
+      setIsNativeFS(on);
+      onFullscreenChange?.(on || isFallbackFS);
     };
-
-    document.addEventListener("fullscreenchange", handleFullscreenChange);
-    document.addEventListener("webkitfullscreenchange", handleFullscreenChange);
-
+    document.addEventListener("fullscreenchange", onChange);
+    document.addEventListener("webkitfullscreenchange", onChange);
     return () => {
-      document.removeEventListener("fullscreenchange", handleFullscreenChange);
-      document.removeEventListener("webkitfullscreenchange", handleFullscreenChange);
+      document.removeEventListener("fullscreenchange", onChange);
+      document.removeEventListener("webkitfullscreenchange", onChange);
     };
-  }, [onFullscreenChange]);
+  }, [isFallbackFS, onFullscreenChange]);
 
-  // Fullscreen toggle handler
+  /* ─── ESC to exit fallback fullscreen ──────────────────────────────────── */
+  useEffect(() => {
+    if (!isFallbackFS) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setIsFallbackFS(false);
+        onFullscreenChange?.(false);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [isFallbackFS, onFullscreenChange]);
+
+  /* ─── toggle fullscreen ─────────────────────────────────────────────────── */
   const toggleFullscreen = useCallback(async () => {
     const container = containerRef.current as FullscreenElement | null;
     if (!container) return;
 
-    if (isFallbackFullscreen) {
-      setIsFallbackFullscreen(false);
+    if (isFallbackFS) {
+      setIsFallbackFS(false);
       onFullscreenChange?.(false);
       return;
     }
 
-    if (isFullscreen) {
+    if (isNativeFS) {
       const doc = document as FullscreenDocument;
       try {
-        if (doc.exitFullscreen) {
-          await doc.exitFullscreen();
-        } else if (doc.webkitExitFullscreen) {
-          await doc.webkitExitFullscreen();
-        }
-      } catch (e) {
-        console.warn("Failed to exit native fullscreen:", e);
-      }
+        if (doc.exitFullscreen) await doc.exitFullscreen();
+        else if (doc.webkitExitFullscreen) await doc.webkitExitFullscreen();
+      } catch {/* ignore */}
       return;
     }
 
     try {
-      if (container.requestFullscreen) {
-        await container.requestFullscreen();
-      } else if (container.webkitRequestFullscreen) {
-        await container.webkitRequestFullscreen();
-      } else {
-        // Fallback for iOS Safari on iPhones which restrict div.requestFullscreen
-        setIsFallbackFullscreen(true);
-        onFullscreenChange?.(true);
-      }
+      if (container.requestFullscreen) await container.requestFullscreen();
+      else if (container.webkitRequestFullscreen) await container.webkitRequestFullscreen();
+      else { setIsFallbackFS(true); onFullscreenChange?.(true); }
     } catch {
-      // Browser blocked native fullscreen, use smooth in-app fullscreen modal
-      setIsFallbackFullscreen(true);
+      setIsFallbackFS(true);
       onFullscreenChange?.(true);
     }
-  }, [isFullscreen, isFallbackFullscreen, onFullscreenChange]);
+  }, [isNativeFS, isFallbackFS, onFullscreenChange]);
 
-  // Expose methods to parent via ref
-  useImperativeHandle(
-    ref,
-    () => ({
-      toggleFullscreen,
-      isFullscreen: activeFullscreen,
-    }),
-    [toggleFullscreen, activeFullscreen],
-  );
+  useImperativeHandle(ref, () => ({ toggleFullscreen, isFullscreen: activeFullscreen }), [
+    toggleFullscreen,
+    activeFullscreen,
+  ]);
 
-  // Allow ESC key to exit in fallback mode
-  useEffect(() => {
-    if (!isFallbackFullscreen) return;
+  /* ─── scale calculation ─────────────────────────────────────────────────── */
+  // Scale the 1280-wide iframe DOWN so it fits the real container.
+  // If containerWidth >= IFRAME_W we don't scale (scale = 1).
+  const scale = containerWidth > 0 ? Math.min(1, containerWidth / IFRAME_W) : 1;
+  const scaledH = IFRAME_H * scale; // actual rendered height after scale
 
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        setIsFallbackFullscreen(false);
-        onFullscreenChange?.(false);
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isFallbackFullscreen, onFullscreenChange]);
-
-  // Scaling logic
-  const isScaled = containerWidth > 0 && containerWidth < BASE_WIDTH;
-  const scale = isScaled ? containerWidth / BASE_WIDTH : 1;
-
+  /* ─── render ─────────────────────────────────────────────────────────────── */
   return (
-    <div
-      ref={containerRef}
-      className={`group relative overflow-hidden bg-black transition-all ${
-        activeFullscreen
-          ? "fixed inset-0 z-50 flex items-center justify-center w-screen h-screen p-0 m-0 rounded-none border-0"
-          : `w-full aspect-video rounded-xl border border-border/50 shadow-sm ${className}`
-      }`}
-    >
-      {/* Loading state indicator */}
-      {isLoading && (
-        <div className="absolute inset-0 flex items-center justify-center bg-zinc-950/90 z-10 text-muted-foreground gap-2 text-xs">
-          <Loader2 className="size-4 animate-spin text-primary" />
-          <span>Loading session video…</span>
-        </div>
-      )}
-
-      {/* Video frame container */}
+    /**
+     * outerRef  – we measure this width (it follows the normal page flow).
+     * containerRef – the div we request fullscreen on (may be fixed overlay in fallback).
+     */
+    <div ref={outerRef} className={`w-full ${className}`}>
       <div
-        className="relative overflow-hidden flex items-center justify-center"
-        style={{
-          width: activeFullscreen ? "100%" : "100%",
-          height: activeFullscreen ? "100%" : "100%",
-          maxWidth: activeFullscreen ? "100vw" : "100%",
-          maxHeight: activeFullscreen ? "100vh" : "100%",
-          aspectRatio: "16 / 9",
-        }}
+        ref={containerRef}
+        className={
+          activeFullscreen
+            ? "fixed inset-0 z-50 bg-black flex items-center justify-center"
+            : "relative w-full bg-black rounded-xl overflow-hidden border border-border/40 shadow-sm"
+        }
+        /* In normal (non-fullscreen) mode the outer div is sized by the scaled
+           iframe height so there is no empty gap above/below the video. */
+        style={activeFullscreen ? undefined : { height: scaledH > 0 ? scaledH : undefined }}
       >
+        {/* ── loading overlay ───────────────────────────────────────────── */}
+        {isLoading && (
+          <div className="absolute inset-0 z-10 flex items-center justify-center bg-zinc-950/90 text-muted-foreground gap-2 text-xs">
+            <Loader2 className="size-4 animate-spin text-primary" />
+            <span>Loading session video…</span>
+          </div>
+        )}
+
+        {/* ── iframe at full 1280×720, scaled down ─────────────────────── */}
         <iframe
           src={previewUrl}
           title={title}
-          className="border-0"
+          className="border-0 block"
           allow="autoplay; fullscreen; picture-in-picture; encrypted-media"
           allowFullScreen
           onLoad={() => setIsLoading(false)}
           style={
-            isScaled && !activeFullscreen
-              ? {
-                  width: `${BASE_WIDTH}px`,
-                  height: `${BASE_HEIGHT}px`,
+            activeFullscreen
+              ? { width: "100%", height: "100%" }
+              : {
+                  width: `${IFRAME_W}px`,
+                  height: `${IFRAME_H}px`,
                   transform: `scale(${scale})`,
                   transformOrigin: "top left",
-                  position: "absolute",
-                  top: 0,
-                  left: 0,
-                }
-              : {
-                  width: "100%",
-                  height: "100%",
+                  display: "block",
                 }
           }
         />
 
-        {/* Top-Right Blocking Layer:
-            Directly masks and intercepts touch/clicks on Google Drive's pop-out button
-            (which redirects users to google drive in a new tab).
-            Students will instead use the designated 'Open in Google Drive' button below the video.
-        */}
-        <div
-          className="absolute top-0 right-0 w-16 h-14 z-20 bg-black pointer-events-auto select-none cursor-default"
-          aria-hidden="true"
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-          }}
-          onTouchStart={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-          }}
-        />
-      </div>
+        {/* ── block the Google Drive top-right pop-out icon ────────────── */}
+        {!activeFullscreen && (
+          <div
+            aria-hidden="true"
+            className="absolute top-0 right-0 z-20 bg-black"
+            style={{ width: Math.round(72 * scale), height: Math.round(56 * scale) }}
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
+            onTouchStart={(e) => { e.preventDefault(); e.stopPropagation(); }}
+          />
+        )}
 
-      {/* Floating Exit Button for Fullscreen Mode */}
-      {activeFullscreen && (
-        <Button
-          type="button"
-          size="sm"
-          variant="secondary"
-          onClick={toggleFullscreen}
-          className="absolute top-4 left-4 z-30 bg-zinc-900/90 text-white hover:bg-zinc-800 border border-white/20 shadow-lg text-xs flex items-center gap-1.5 backdrop-blur-xs"
-        >
-          <Minimize2 className="size-3.5" />
-          Exit Full Screen
-        </Button>
-      )}
+        {/* ── exit button visible in fullscreen ────────────────────────── */}
+        {activeFullscreen && (
+          <Button
+            type="button"
+            size="sm"
+            onClick={toggleFullscreen}
+            className="absolute top-4 left-4 z-30 bg-zinc-900/90 text-white hover:bg-zinc-800 border border-white/20 shadow-lg text-xs flex items-center gap-1.5"
+          >
+            <Minimize2 className="size-3.5" />
+            Exit Full Screen
+          </Button>
+        )}
+      </div>
     </div>
   );
 });
