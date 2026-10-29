@@ -1,15 +1,25 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/lib/convex";
 import { googleDriveOpenUrl, googleDrivePreviewUrl } from "@/lib/drive";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { MarkdownMath } from "@/components/math/markdown-math";
-import { CheckCircle2, ExternalLink, Loader2 } from "lucide-react";
+import {
+  CheckCircle2,
+  ExternalLink,
+  Loader2,
+  Maximize2,
+  Minimize2,
+} from "lucide-react";
 import type { Id } from "@/lib/convex";
 import { toast } from "sonner";
+import {
+  DriveVideoPlayer,
+  type DriveVideoPlayerRef,
+} from "@/components/session/drive-video-player";
 
 export default function SessionPage() {
   const params = useParams();
@@ -23,6 +33,8 @@ export default function SessionPage() {
   const setLastViewed = useMutation(api.courses.setLastViewed);
 
   const [isUpdating, setIsUpdating] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const playerRef = useRef<DriveVideoPlayerRef>(null);
 
   useEffect(() => {
     void touch({ courseId, sessionId });
@@ -84,15 +96,12 @@ export default function SessionPage() {
         ) : null}
       </div>
 
-      <div className="aspect-video w-full overflow-hidden rounded-xl border bg-black/5 shadow-2xs">
-        <iframe
-          src={preview}
-          className="h-full w-full"
-          allow="autoplay; encrypted-media"
-          allowFullScreen
-          title={session.title}
-        />
-      </div>
+      <DriveVideoPlayer
+        ref={playerRef}
+        previewUrl={preview}
+        title={session.title}
+        onFullscreenChange={setIsFullscreen}
+      />
 
       <div className="flex flex-col sm:flex-row gap-3 sm:items-center pt-1">
         <Button
@@ -113,6 +122,25 @@ export default function SessionPage() {
             </>
           ) : (
             "Mark as Complete"
+          )}
+        </Button>
+
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => playerRef.current?.toggleFullscreen()}
+          className="w-full sm:w-auto min-h-11 sm:min-h-10 text-sm font-medium inline-flex items-center justify-center"
+        >
+          {isFullscreen ? (
+            <>
+              <Minimize2 className="size-3.5 mr-2" />
+              Exit Full Screen
+            </>
+          ) : (
+            <>
+              <Maximize2 className="size-3.5 mr-2" />
+              Full Screen
+            </>
           )}
         </Button>
 
