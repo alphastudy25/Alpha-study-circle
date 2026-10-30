@@ -24,6 +24,7 @@ type SessionDoc = {
   title: string;
   description?: string;
   videoRef: string;
+  youtubeId?: string;
   status: "draft" | "published";
   order: number;
   activityQuestionsCount?: number;
@@ -50,6 +51,7 @@ export default function AdminWeekPage() {
   const [editingId, setEditingId] = useState<Id<"sessions"> | null>(null);
   const [title, setTitle] = useState("");
   const [videoRef, setVideoRef] = useState("");
+  const [youtubeUrl, setYoutubeUrl] = useState("");
   const [description, setDescription] = useState("");
   const [activityQuestions, setActivityQuestions] = useState<
     ActivityQuestionDraft[]
@@ -84,6 +86,7 @@ export default function AdminWeekPage() {
     setEditingId(null);
     setTitle("");
     setVideoRef("");
+    setYoutubeUrl("");
     setDescription("");
     setActivityQuestions([]);
   }
@@ -92,6 +95,7 @@ export default function AdminWeekPage() {
     setEditingId(s._id);
     setTitle(s.title);
     setVideoRef(s.videoRef);
+    setYoutubeUrl(s.youtubeId ?? "");
     setDescription(s.description ?? "");
     setActivityQuestions([]); // will be populated by useEffect once adminQuestions loads
   }
@@ -173,6 +177,7 @@ export default function AdminWeekPage() {
           sessionId: editingId,
           title: title.trim(),
           videoRef: videoRef.trim(),
+          youtubeId: youtubeUrl.trim() || undefined,
           description: description.trim() || undefined,
         });
 
@@ -191,6 +196,7 @@ export default function AdminWeekPage() {
           sectionId,
           title: title.trim(),
           driveUrl: videoRef.trim(),
+          youtubeUrl: youtubeUrl.trim() || undefined,
           description: description.trim() || undefined,
           status: "published",
           activityQuestions:
@@ -366,6 +372,20 @@ export default function AdminWeekPage() {
             />
             <p className="text-[11px] text-muted-foreground">
               Paste the shareable Google Drive link of the lecture recording.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label>YouTube URL or Video ID (Optional)</Label>
+            <Input
+              value={youtubeUrl}
+              onChange={(e) => setYoutubeUrl(e.target.value)}
+              placeholder="https://www.youtube.com/watch?v=... or youtu.be/... or Video ID"
+            />
+            <p className="text-[11px] text-muted-foreground">
+              If provided, the lesson will use the YouTube embed instead of the
+              Google Drive player. Accepts full YouTube URLs or a bare 11-character
+              video ID.
             </p>
           </div>
 

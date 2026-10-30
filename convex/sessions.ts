@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import { extractGoogleDriveFileId } from "./lib/drive";
+import { extractYoutubeId } from "./lib/youtube";
 import { requireAdmin, requireStudentCourse } from "./lib/permissions";
 
 export const get = query({
@@ -49,10 +50,11 @@ export const update = mutation({
     title: v.optional(v.string()),
     description: v.optional(v.string()),
     videoRef: v.optional(v.string()),
+    youtubeId: v.optional(v.string()),
     status: v.optional(v.union(v.literal("draft"), v.literal("published"))),
     order: v.optional(v.number()),
   },
-  handler: async (ctx, { sessionId, ...patch }) => {
+  handler: async (ctx, { sessionId, youtubeId, ...patch }) => {
     const existing = await ctx.db.get(sessionId);
     if (!existing) throw new Error("Session not found");
     await requireAdmin(ctx);
@@ -60,7 +62,14 @@ export const update = mutation({
       const fileId = extractGoogleDriveFileId(patch.videoRef);
       if (fileId) patch.videoRef = fileId;
     }
-    await ctx.db.patch(sessionId, patch);
+    const updates: Record<string, unknown> = { ...patch };
+    if (youtubeId !== undefined) {
+      const ytId = extractYoutubeId(youtubeId);
+      updates.youtubeId = ytId ?? undefined;
+      if (ytId) updates.videoProvider = "youtube";
+      else if (!existing.youtubeId) updates.videoProvider = "gdrive";
+    }
+    await ctx.db.patch(sessionId, updates);
   },
 });
 
@@ -71,6 +80,7 @@ export const upsert = mutation({
     title: v.string(),
     description: v.optional(v.string()),
     driveUrl: v.string(),
+    youtubeUrl: v.optional(v.string()),
     order: v.optional(v.number()),
     status: v.optional(v.union(v.literal("draft"), v.literal("published"))),
     recordedAt: v.optional(v.number()),
@@ -101,6 +111,10 @@ export const upsert = mutation({
     await requireAdmin(ctx);
     const fileId = extractGoogleDriveFileId(args.driveUrl);
     if (!fileId) throw new Error("Invalid Google Drive link");
+    const ytId = args.youtubeUrl
+      ? (extractYoutubeId(args.youtubeUrl) ?? undefined)
+      : undefined;
+    const videoProvider = ytId ? "youtube" as const : "gdrive" as const;
 
     let sessionId = args.sessionId;
 
@@ -109,6 +123,8 @@ export const upsert = mutation({
         title: args.title,
         description: args.description,
         videoRef: fileId,
+        youtubeId: ytId,
+        videoProvider,
         status: args.status ?? "draft",
         recordedAt: args.recordedAt,
       });
@@ -125,8 +141,9 @@ export const upsert = mutation({
         sectionId: args.sectionId,
         title: args.title,
         description: args.description,
-        videoProvider: "gdrive",
+        videoProvider,
         videoRef: fileId,
+        youtubeId: ytId,
         order,
         status: args.status ?? "draft",
         recordedAt: args.recordedAt,

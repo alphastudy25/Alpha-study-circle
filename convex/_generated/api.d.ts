@@ -23,6 +23,7 @@ import type * as lib_drive from "../lib/drive.js";
 import type * as lib_env from "../lib/env.js";
 import type * as lib_grading from "../lib/grading.js";
 import type * as lib_permissions from "../lib/permissions.js";
+import type * as lib_youtube from "../lib/youtube.js";
 import type * as progress from "../progress.js";
 import type * as sections from "../sections.js";
 import type * as seed from "../seed.js";
@@ -51,6 +52,7 @@ declare const fullApi: ApiFromModules<{
   "lib/env": typeof lib_env;
   "lib/grading": typeof lib_grading;
   "lib/permissions": typeof lib_permissions;
+  "lib/youtube": typeof lib_youtube;
   progress: typeof progress;
   sections: typeof sections;
   seed: typeof seed;

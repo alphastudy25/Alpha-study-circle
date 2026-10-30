@@ -4,12 +4,11 @@ import { useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/lib/convex";
-import { googleDriveOpenUrl, googleDrivePreviewUrl } from "@/lib/drive";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { googleDrivePreviewUrl } from "@/lib/drive";
+import { Button } from "@/components/ui/button";
 import { MarkdownMath } from "@/components/math/markdown-math";
 import {
   CheckCircle2,
-  ExternalLink,
   Loader2,
   Maximize2,
   Minimize2,
@@ -100,6 +99,7 @@ export default function SessionPage() {
         ref={playerRef}
         previewUrl={preview}
         title={session.title}
+        youtubeId={session.youtubeId}
         onFullscreenChange={setIsFullscreen}
       />
 
@@ -143,19 +143,6 @@ export default function SessionPage() {
             </>
           )}
         </Button>
-
-        <a
-          href={googleDriveOpenUrl(session.videoRef)}
-          target="_blank"
-          rel="noreferrer"
-          className={buttonVariants({
-            variant: "outline",
-            className: "w-full sm:w-auto min-h-11 sm:min-h-10 text-sm font-medium inline-flex items-center justify-center",
-          })}
-        >
-          <ExternalLink className="size-3.5 mr-2" />
-          Open in Google Drive
-        </a>
       </div>
     </div>
   );
